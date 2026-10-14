@@ -1,9 +1,20 @@
 # 제미나이 4 아르곤 API 호출 예제 — 원자 모형 만들기
 
-코난쌤 유튜브 영상 「제미나이 4 아르곤 직접 써봤습니다」의 직접 호출 구간(07:44~09:12)에서 쓴 코드와 결과물이에요.
+코난쌤 유튜브 영상 「제미나이 4 아르곤」에서 쓴 코드와 결과물이에요. API 직접 호출 예제(원자 모형)와 Gemini 앱 사고 수준 비교(경복궁 레고)가 들어 있어요.
 
 - **결과 페이지 바로 보기:** https://conanssam.com/gemini4-argon-demo/
   (영상에 나온 실행에서 아르곤이 만든 HTML 그대로예요. API 키 없이 열려요.)
+
+## 경복궁 레고 비교 (Gemini 앱 사고 수준 3단계 + Opus 5.5)
+
+같은 경복궁 레고 프롬프트를 Gemini 앱(4 Argon, Canvas)에서 사고 수준 최저가·보통·최고가로 한 번씩, claude.ai Opus 5.5로 한 번 돌린 결과 HTML 네 개 → [`gyeongbokgung/`](gyeongbokgung/)
+
+| 바로 열기 | 걸린 시간 | 블록 수 |
+|---|---|---|
+| [최저가](https://conanssam.com/gemini4-argon-demo/gyeongbokgung/gemini-low.html) | 약 189초 | 4,691 |
+| [보통](https://conanssam.com/gemini4-argon-demo/gyeongbokgung/gemini-mid.html) | 173.2초 | 29,080 |
+| [최고가](https://conanssam.com/gemini4-argon-demo/gyeongbokgung/gemini-high.html) | 351.0초 | 4,643 |
+| [Opus 5.5 · 중간](https://conanssam.com/gemini4-argon-demo/gyeongbokgung/opus.html) | 385.5초 | 10,804 |
 
 ## 무엇을 했나요
 

@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>레고 경복궁 (LEGO Gyeongbokgung Palace) 3D</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        * {
+            font-family: 'Noto Sans KR', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0f172a;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        #labels-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 10;
+            overflow: hidden;
+        }
+        .building-label {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            pointer-events: auto;
+            cursor: pointer;
+            transition: opacity 0.25s ease, transform 0.2s ease;
+        }
+        .building-label:hover {
+            transform: translate(-50%, -108%) scale(1.06);
+            z-index: 30;
+        }
+        .building-label::after {
+            content: '';
+            position: absolute;
+            bottom: -7px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 7px 6px 0;
+            border-style: solid;
+            border-color: rgba(15, 23, 42, 0.92) transparent transparent transparent;
+        }
+        /* Custom Lego Stud Badge */
+        .lego-badge {
+            box-shadow: inset 0 -3px 0 rgba(0,0,0,0.25), 0 4px 10px rgba(0,0,0,0.3);
+        }
+        /* Custom Range Slider */
+        input[type=range] {
+            accent-color: #ef4444;
+        }
+    </style>
+</head>
+<body class="text-slate-100">
+
+    <!-- 3D Viewport -->
+    <div id="canvas-container"></div>
+
+    <!-- Floating 3D-to-2D Korean Labels Container -->
+    <div id="labels-container"></div>
+
+    <!-- Top Header & Info Bar -->
+    <header class="fixed top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-3 pointer-events-none">
+        <!-- Brand / Title Card -->
+        <div class="pointer-events-auto flex items-center gap-3.5 bg-slate-900/85 backdrop-blur-md border border-slate-700/80 px-4 py-3 rounded-2xl shadow-2xl">
+            <div class="relative w-11 h-11 rounded-xl bg-red-600 flex items-center justify-center lego-badge shrink-0 border border-red-400">
+                <!-- 4 Lego Studs Icon -->
+                <div class="grid grid-cols-2 gap-1.5">
+                    <span class="w-3 h-3 rounded-full bg-red-500 border border-red-300 shadow-inner block"></span>
+                    <span class="w-3 h-3 rounded-full bg-red-500 border border-red-300 shadow-inner block"></span>
+                    <span class="w-3 h-3 rounded-full bg-red-500 border border-red-300 shadow-inner block"></span>
+                    <span class="w-3 h-3 rounded-full bg-red-500 border border-red-300 shadow-inner block"></span>
+                </div>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="text-[11px] font-extrabold tracking-widest uppercase px-2 py-0.5 rounded bg-amber-400 text-slate-950">Architecture #21099</span>
+                    <span id="brick-counter" class="text-xs font-semibold text-amber-300 bg-slate-800 px-2 py-0.5 rounded-md border border-slate-700">총 0 브릭</span>
+                </div>
+                <h1 class="text-lg sm:text-xl font-black tracking-tight text-white mt-0.5">레고 경복궁 3D 디오라마</h1>
+            </div>
+        </div>
+
+        <!-- Camera Preset & Label Toggles -->
+        <div class="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-slate-900/85 backdrop-blur-md border border-slate-700/80 p-1.5 rounded-2xl shadow-2xl">
+            <button onclick="focusBuilding('all')" class="px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition active:scale-95">전체 보기</button>
+            <button onclick="focusBuilding('gwanghwamun')" class="px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl hover:bg-slate-800 text-slate-300 transition active:scale-95">광화문</button>
+            <button onclick="focusBuilding('heungnyemun')" class="px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl hover:bg-slate-800 text-slate-300 transition active:scale-95">흥례문</button>
+            <button onclick="focusBuilding('geunjeongjeon')" class="px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl hover:bg-slate-800 text-amber-300 transition active:scale-95">근정전</button>
+            <button onclick="focusBuilding('gyeonghoeru')" class="px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl hover:bg-slate-800 text-emerald-300 transition active:scale-95">경회루</button>
+            <div class="h-5 w-[1px] bg-slate-700 mx-1"></div>
+            <button id="btn-toggle-labels" onclick="toggleLabels()" class="px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white transition active:scale-95">이름표 켜짐</button>
+            <button id="btn-toggle-time" onclick="toggleDayNight()" class="px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition active:scale-95">☀️ 주간</button>
+        </div>
+    </header>
+
+    <!-- Legend Card (Color Guide) -->
+    <aside class="fixed top-24 left-4 z-20 hidden lg:block pointer-events-auto bg-slate-900/80 backdrop-blur-md border border-slate-700/80 p-3.5 rounded-2xl shadow-xl w-56">
+        <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-2.5 flex items-center justify-between">
+            <span>브릭 색상 가이드</span>
+            <span class="text-[10px] text-slate-500">1x1 스터드 기준</span>
+        </h2>
+        <div class="space-y-2 text-xs">
+            <div class="flex items-center gap-2.5">
+                <span class="w-4 h-4 rounded bg-[#2B3138] border border-slate-500 shrink-0"></span>
+                <span class="text-slate-200 font-medium">기와 지붕 (진회색 브릭)</span>
+            </div>
+            <div class="flex items-center gap-2.5">
+                <div class="flex -space-x-1 shrink-0">
+                    <span class="w-3.5 h-3.5 rounded-full bg-[#D32F2F] border border-white/30"></span>
+                    <span class="w-3.5 h-3.5 rounded-full bg-[#00796B] border border-white/30"></span>
+                    <span class="w-3.5 h-3.5 rounded-full bg-[#1976D2] border border-white/30"></span>
+                </div>
+                <span class="text-slate-200 font-medium">단청 (빨강·초록·파랑)</span>
+            </div>
+            <div class="flex items-center gap-2.5">
+                <span class="w-4 h-4 rounded bg-[#E5E2DC] border border-slate-400 shrink-0"></span>
+                <span class="text-slate-200 font-medium">화강암 월대·육축·돌기둥</span>
+            </div>
+            <div class="flex items-center gap-2.5">
+                <span class="w-4 h-4 rounded bg-[#0E87CC] border border-sky-300 shrink-0"></span>
+                <span class="text-slate-200 font-medium">경회루 연못 & 어도</span>
+            </div>
+        </div>
+        <div class="mt-3 pt-2.5 border-t border-slate-800 text-[11px] text-slate-400 leading-relaxed">
+            💡 <b>마우스 왼쪽 드래그</b>: 회전<br>
+            💡 <b>마우스 오른쪽 드래그</b>: 이동<br>
+            💡 <b>마우스 휠 / 핀치</b>: 확대·축소
+        </div>
+    </aside>
+
+    <!-- Bottom Assembly Control Dock -->
+    <footer class="fixed bottom-5 left-1/2 -translate-x-1/2 z-20 w-[94%] max-w-2xl pointer-events-auto">
+        <div class="bg-slate-900/90 backdrop-blur-xl border border-slate-700/90 px-4 py-3.5 sm:px-6 sm:py-4 rounded-3xl shadow-2xl flex flex-col gap-3">
+            <!-- Top Row: Progress Bar & Step Info -->
+            <div class="flex items-center justify-between gap-4 text-xs sm:text-sm">
+                <div class="flex items-center gap-2">
+                    <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="build-stage-text" class="font-bold text-white">완성 상태 (100%)</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="layer-indicator" class="text-xs font-mono text-slate-300 bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700">층: MAX / MAX</span>
+                </div>
+            </div>
+
+            <!-- Interactive Progress Slider -->
+            <div class="w-full flex items-center gap-3">
+                <span class="text-[11px] font-bold text-slate-400 shrink-0">바닥</span>
+                <input id="build-slider" type="range" min="0" max="1000" value="1000" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                <span class="text-[11px] font-bold text-slate-400 shrink-0">용마루</span>
+            </div>
+
+            <!-- Action Buttons Row -->
+            <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div class="flex items-center gap-2">
+                    <button id="btn-assemble" onclick="startAssemblyAnimation()" class="flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-red-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-extrabold text-sm shadow-lg shadow-red-600/30 transition transform active:scale-95">
+                        <svg class="w-4 h-4 fill-current" viewBox="0 0 20 20"><path d="M4 4l12 6-12 6z"/></svg>
+                        <span id="btn-assemble-text">조립하기</span>
+                    </button>
+                    <button id="btn-pause" onclick="togglePauseAssembly()" class="hidden items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-bold text-sm transition active:scale-95">
+                        <span id="btn-pause-text">일시정지</span>
+                    </button>
+                    <button onclick="instantComplete()" class="px-3.5 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs sm:text-sm transition active:scale-95">
+                        즉시 완성
+                    </button>
+                </div>
+
+                <!-- Speed Controls -->
+                <div class="flex items-center gap-1.5 bg-slate-800/90 p-1 rounded-xl border border-slate-700">
+                    <span class="text-[11px] text-slate-400 font-semibold px-2">조립 속도</span>
+                    <button onclick="setSpeed(0.6)" id="speed-0.6" class="speed-btn px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition">1x</button>
+                    <button onclick="setSpeed(1.2)" id="speed-1.2" class="speed-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500 text-slate-950 transition">2x</button>
+                    <button onclick="setSpeed(2.5)" id="speed-2.5" class="speed-btn px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition">4x</button>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // ============================================================================
+        // 1. LEGO CONSTANTS & COLOR PALETTE
+        // ============================================================================
+        const STUD_PITCH = 1.0;        // 1x1 Lego footprint width/depth
+        const BRICK_HEIGHT = 0.8;      // Standard brick layer height
+        const STUD_RADIUS = 0.31;      // Top cylinder stud radius
+        const STUD_HEIGHT = 0.18;      // Top cylinder stud height
+
+        const PALETTE = {
+            BASE_SAND:    { hex: 0xD8CEBE, roughness: 0.45, metalness: 0.02, transparent: false }, // 백사장/마당 마사토
+            BASE_GRASS:   { hex: 0x5C8D46, roughness: 0.4,  metalness: 0.02, transparent: false }, // 잔디
+            PINE_NEEDLE:  { hex: 0x2E5A27, roughness: 0.45, metalness: 0.02, transparent: false }, // 소나무 잎
+            PINE_TRUNK:   { hex: 0x5D4037, roughness: 0.5,  metalness: 0.02, transparent: false }, // 소나무 기둥
+            STONE_LIGHT:  { hex: 0xE6E4E0, roughness: 0.35, metalness: 0.05, transparent: false }, // 화강암 월대/육축/돌기둥
+            STONE_MID:    { hex: 0xB8BCC2, roughness: 0.35, metalness: 0.05, transparent: false }, // 계단/기단석/어도의 박석
+            STONE_DARK:   { hex: 0x7A8088, roughness: 0.4,  metalness: 0.05, transparent: false }, // 담장 하단 암석
+            PILLAR_RED:   { hex: 0xC62828, roughness: 0.25, metalness: 0.08, transparent: false }, // 궁궐 주홍 기둥 & 문짝
+            DANCHEONG_R:  { hex: 0xE53935, roughness: 0.25, metalness: 0.08, transparent: false }, // 단청 빨강
+            DANCHEONG_G:  { hex: 0x00897B, roughness: 0.25, metalness: 0.08, transparent: false }, // 단청 뇌록(초록)
+            DANCHEONG_B:  { hex: 0x1E88E5, roughness: 0.25, metalness: 0.08, transparent: false }, // 단청 군청(파랑)
+            GOLD_POINT:   { hex: 0xFBC02D, roughness: 0.2,  metalness: 0.35, transparent: false }, // 금박 장식/현판 테두리
+            WALL_WHITE:   { hex: 0xF7F5F0, roughness: 0.3,  metalness: 0.03, transparent: false }, // 회벽/창호지
+            ROOF_DARK:    { hex: 0x2A3038, roughness: 0.28, metalness: 0.12, transparent: false }, // 전통 기와 (진회색 블록)
+            ROOF_RIDGE:   { hex: 0x454D57, roughness: 0.3,  metalness: 0.12, transparent: false }, // 용마루/내림마루 강조 기와
+            WATER_TRANS:  { hex: 0x0288D1, roughness: 0.1,  metalness: 0.1,  transparent: true, opacity: 0.84 } // 경회루 연못 반투명 브릭
+        };
+
+        // ============================================================================
+        // 2. THREE.JS SCENE & CAMERA SETUP
+        // ============================================================================
+        let scene, camera, renderer, controls;
+        let ambientLight, sunLight, hemiLight;
+        let isNightMode = false;
+        let labelsVisible = true;
+
+        // Voxel storage: key = "x,y,z" -> colorKey
+        const voxelGrid = new Map();
+
+        // InstancedMesh groups per colorKey for ultra-fast rendering & assembly animation
+        const colorBatches = {};
+        const allBrickEntries = []; // Sorted bottom-to-top for assembly animation
+        let maxLayerY = 0;
+
+        // Animation State
+        let isAssembling = false;
+        let isPaused = false;
+        let assemblyProgress = 1.0; // 0.0 to 1.0 (in terms of layer progression)
+        let assemblySpeed = 1.2;    // Multiplier
+        let cameraTargetTween = null;
+
+        // Korean Label Definitions
+        const KOREAN_LABELS = [
+            {
+                id: 'gwanghwamun',
+                name: '광화문 (光化門)',
+                subtitle: '경복궁의 정문 · 3개의 홍예문과 중층 문루',
+                pos: new THREE.Vector3(0, 15.5 * BRICK_HEIGHT, 46),
+                camPos: new THREE.Vector3(0, 26, 82),
+                lookAt: new THREE.Vector3(0, 6, 44)
+            },
+            {
+                id: 'heungnyemun',
+                name: '흥례문 (興禮門)',
+                subtitle: '광화문과 근정전 사이의 중층 외대문',
+                pos: new THREE.Vector3(0, 13.5 * BRICK_HEIGHT, 16),
+                camPos: new THREE.Vector3(16, 24, 42),
+                lookAt: new THREE.Vector3(0, 5, 16)
+            },
+            {
+                id: 'geunjeongjeon',
+                name: '근정전 (勤政殿)',
+                subtitle: '국보 · 2단 월대 위 중층 팔작지붕 정전',
+                pos: new THREE.Vector3(0, 24.5 * BRICK_HEIGHT, -18),
+                camPos: new THREE.Vector3(24, 30, 14),
+                lookAt: new THREE.Vector3(0, 9, -18)
+            },
+            {
+                id: 'gyeonghoeru',
+                name: '경회루 (慶會樓)',
+                subtitle: '국보 · 방형 연못과 24개 돌기둥 위의 누각',
+                pos: new THREE.Vector3(-33, 17.5 * BRICK_HEIGHT, -18),
+                camPos: new THREE.Vector3(-58, 28, 15),
+                lookAt: new THREE.Vector3(-33, 6, -18)
+            },
+            {
+                id: 'palacewall',
+                name: '궁궐 담장 & 동십자각',
+                subtitle: '기와를 얹은 화강암·전벽돌 궁장',
+                pos: new THREE.Vector3(38, 8.5 * BRICK_HEIGHT, 46),
+                camPos: new THREE.Vector3(62, 26, 70),
+                lookAt: new THREE.Vector3(25, 4, 35)
+            }
+        ];
+
+        const labelElements = {};
+
+        // ============================================================================
+        // 3. LEGO BRICK GEOMETRY (WITH TOP STUD)
+        // ============================================================================
+        function createLegoBrickGeometry() {
+            // Slight bevel gap (0.96 instead of 1.0) so individual LEGO bricks are clearly visible!
+            const bodyWidth = STUD_PITCH * 0.96;
+            const bodyHeight = BRICK_HEIGHT * 0.96;
+            const bodyDepth = STUD_PITCH * 0.96;
+
+            const boxGeo = new THREE.BoxGeometry(bodyWidth, bodyHeight, bodyDepth);
+            // Shift box so its base sits at y=0 and top at y=BRICK_HEIGHT
+            boxGeo.translate(0, BRICK_HEIGHT * 0.5, 0);
+
+            // Create the iconic LEGO cylindrical stud on the top surface
+            const studGeo = new THREE.CylinderGeometry(STUD_RADIUS, STUD_RADIUS, STUD_HEIGHT, 14);
+            studGeo.translate(0, BRICK_HEIGHT + STUD_HEIGHT * 0.5 - 0.01, 0);
+
+            // Merge box + cylinder stud into a single geometry for InstancedMesh
+            const mergedGeo = new THREE.BufferGeometry();
+            const pos1 = boxGeo.attributes.position.array;
+            const norm1 = boxGeo.attributes.normal.array;
+            const idx1 = boxGeo.index.array;
+
+            const pos2 = studGeo.attributes.position.array;
+            const norm2 = studGeo.attributes.normal.array;
+            const idx2 = studGeo.index.array;
+
+            const combinedPos = new Float32Array(pos1.length + pos2.length);
+            combinedPos.set(pos1, 0);
+            combinedPos.set(pos2, pos1.length);
+
+            const combinedNorm = new Float32Array(norm1.length + norm2.length);
+            combinedNorm.set(norm1, 0);
+            combinedNorm.set(norm2, norm1.length);
+
+            const combinedIdx = new Uint16Array(idx1.length + idx2.length);
+            combinedIdx.set(idx1, 0);
+            const vertexOffset = pos1.length / 3;
+            for (let i = 0; i < idx2.length; i++) {
+                combinedIdx[idx1.length + i] = idx2[i] + vertexOffset;
+            }
+
+            mergedGeo.setAttribute('position', new THREE.BufferAttribute(combinedPos, 3));
+            mergedGeo.setAttribute('normal', new THREE.BufferAttribute(combinedNorm, 3));
+            mergedGeo.setIndex(new THREE.BufferAttribute(combinedIdx, 1));
+
+            return mergedGeo;
+        }
+
+        // ============================================================================
+        // 4. VOXEL BUILDER HELPERS
+        // ============================================================================
+        function setBrick(x, y, z, colorKey) {
+            if (y < 0) return;
+            const ix = Math.round(x);
+            const iy = Math.round(y);
+            const iz = Math.round(z);
+            const key = `${ix},${iy},${iz}`;
+            if (colorKey === null) {
+                voxelGrid.delete(key);
+            } else {
+                voxelGrid.set(key, colorKey);
+                if (iy > maxLayerY) maxLayerY = iy;
+            }
+        }
+
+        function fillBricks(x1, y1, z1, x2, y2, z2, colorKey) {
+            const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+            const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+            const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+            for (let y = minY; y <= maxY; y++) {
+                for (let x = minX; x <= maxX; x++) {
+                    for (let z = minZ; z <= maxZ; z++) {
+                        setBrick(x, y, z, colorKey);
+                    }
+                }
+            }
+        }
+
+        // Builds a colorful Korean Dancheong (Red / Green / Blue) frieze band along the perimeter
+        function buildDancheongPerimeter(x1, z1, x2, z2, yStart, height) {
+            const pattern = ['DANCHEONG_R', 'DANCHEONG_G', 'DANCHEONG_B', 'DANCHEONG_G'];
+            const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+            const minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+
+            for (let dy = 0; dy < height; dy++) {
+                const y = yStart + dy;
+                for (let x = minX; x <= maxX; x++) {
+                    for (let z = minZ; z <= maxZ; z++) {
+                        const isEdge = (x === minX || x === maxX || z === minZ || z === maxZ);
+                        if (!isEdge) continue;
+                        const isCorner = (x === minX || x === maxX) && (z === minZ || z === maxZ);
+                        if (isCorner) {
+                            setBrick(x, y, z, dy === height - 1 ? 'GOLD_POINT' : 'DANCHEONG_R');
+                        } else {
+                            const idx = Math.abs(x + z + dy * 2) % pattern.length;
+                            setBrick(x, y, z, pattern[idx]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Builds a traditional Korean Paljak (hip-and-gable) dark-gray tile roof with upturned eaves (처마) and Dancheong underside
+        function buildTraditionalRoof(cx, cz, baseHalfW, baseHalfD, yStart, roofLayers, hasRidge = true) {
+            // 1. Colorful Dancheong bracket cornice directly beneath the roof eaves
+            const eaveCheckW = baseHalfW - 1;
+            const eaveCheckD = baseHalfD - 1;
+            buildDancheongPerimeter(
+                cx - eaveCheckW, cz - eaveCheckD,
+                cx + eaveCheckW, cz + eaveCheckD,
+                yStart, 1
+            );
+
+            // 2. Stepped Dark Gray Roof Tile Layers
+            for (let l = 0; l < roofLayers; l++) {
+                const y = yStart + l;
+                const shrinkW = l === 0 ? 0 : l;
+                const shrinkD = l === 0 ? 0 : l;
+                const hw = Math.max(1, baseHalfW - shrinkW);
+                const hd = Math.max(1, baseHalfD - shrinkD);
+
+                fillBricks(cx - hw, y, cz - hd, cx + hw, y, cz + hd, 'ROOF_DARK');
+
+                // Upturned corner eaves (버선코 처마곡선) on bottom two layers
+                if (l === 0) {
+                    const corners = [
+                        [cx - hw, cz - hd], [cx + hw, cz - hd],
+                        [cx - hw, cz + hd], [cx + hw, cz + hd]
+                    ];
+                    corners.forEach(([kx, kz]) => {
+                        setBrick(kx, y, kz, 'DANCHEONG_G'); // Dancheong tip under corner
+                        setBrick(kx, y + 1, kz, 'ROOF_RIDGE'); // Raised corner tile (추녀마루)
+                    });
+                }
+
+                // Subtle gable-end Dancheong decoration (합각 단청)
+                if (l > 0 && l < roofLayers - 1 && hw >= 2) {
+                    setBrick(cx - hw, y, cz, (l % 2 === 0) ? 'DANCHEONG_R' : 'DANCHEONG_B');
+                    setBrick(cx + hw, y, cz, (l % 2 === 0) ? 'DANCHEONG_R' : 'DANCHEONG_B');
+                }
+            }
+
+            // 3. Top Main Ridge (용마루 & 취두)
+            if (hasRidge) {
+                const topY = yStart + roofLayers;
+                const ridgeHalfW = Math.max(2, baseHalfW - roofLayers + 1);
+                fillBricks(cx - ridgeHalfW, topY, cz, cx + ridgeHalfW, topY, cz, 'ROOF_RIDGE');
+                // Owl-tail ornamental end tiles (취두/용두)
+                setBrick(cx - ridgeHalfW, topY + 1, cz, 'ROOF_RIDGE');
+                setBrick(cx + ridgeHalfW, topY + 1, cz, 'ROOF_RIDGE');
+            }
+        }
+
+        // ============================================================================
+        // 5. ARCHITECTURAL GENERATION OF GYEONGBOKGUNG PALACE
+        // ============================================================================
+        function generateGyeongbokgungBricks() {
+            voxelGrid.clear();
+            maxLayerY = 0;
+
+            // ------------------------------------------------------------------------
+            // A. BASEPLATE (궁궐 터, 백사장 마당, 어도, 잔디) - Layer y = 0
+            // ------------------------------------------------------------------------
+            // Main Palace Grounds (-54 to 42 in X, -48 to 54 in Z)
+            fillBricks(-54, 0, -48, 42, 0, 54, 'BASE_SAND');
+
+            // Outer Green Grass Lawn around West/North/East edges & front boulevard sides
+            fillBricks(-54, 0, -48, -16, 0, 44, 'BASE_GRASS');
+            fillBricks(-54, 0, -48, 42, 0, -42, 'BASE_GRASS');
+            fillBricks(36, 0, -48, 42, 0, 44, 'BASE_GRASS');
+            fillBricks(-54, 0, 48, -18, 0, 54, 'BASE_GRASS');
+            fillBricks(18, 0, 48, 42, 0, 54, 'BASE_GRASS');
+
+            // Royal Stone Walkway (삼도/어도 - King's raised center path from Gwanghwamun to Geunjeongjeon)
+            fillBricks(-3, 0, -4, 3, 0, 54, 'STONE_MID');
+            fillBricks(-1, 1, -4, 1, 1, 54, 'STONE_LIGHT'); // Center King's path slightly raised
+
+            // Stone courtyard paving (박석) in front of Geunjeongjeon
+            for (let z = -6; z <= 12; z += 4) {
+                fillBricks(-20, 0, z, 20, 0, z, 'STONE_MID');
+            }
+
+            // ------------------------------------------------------------------------
+            // B. PALACE PERIMETER WALLS (궁궐 담장 & 궐담 기와)
+            // ------------------------------------------------------------------------
+            function buildWallSegment(x1, z1, x2, z2) {
+                // Dark stone base (y=1)
+                fillBricks(x1, 1, z1, x2, 1, z2, 'STONE_DARK');
+                // White/Light stone body with decorative brick pattern (y=2..3)
+                fillBricks(x1, 2, z1, x2, 3, z2, 'STONE_LIGHT');
+                for (let x = Math.min(x1, x2); x <= Math.max(x1, x2); x++) {
+                    for (let z = Math.min(z1, z2); z <= Math.max(z1, z2); z++) {
+                        if ((x + z) % 4 === 0) setBrick(x, 3, z, 'DANCHEONG_R');
+                    }
+                }
+                // Dark gray tile roof cap (y=4..5)
+                if (x1 === x2) {
+                    // North-South wall
+                    fillBricks(x1 - 1, 4, z1, x2 + 1, 4, z2, 'ROOF_DARK');
+                    fillBricks(x1, 5, z1, x2, 5, z2, 'ROOF_RIDGE');
+                } else {
+                    // East-West wall
+                    fillBricks(x1, 4, z1 - 1, x2, 4, z2 + 1, 'ROOF_DARK');
+                    fillBricks(x1, 5, z1, x2, 5, z2, 'ROOF_RIDGE');
+                }
+            }
+
+            // South Main Wall flanking Gwanghwamun (z = 46)
+            buildWallSegment(-52, 46, -15, 46);
+            buildWallSegment(15, 46, 38, 46);
+
+            // West Outer Wall (x = -52)
+            buildWallSegment(-52, -44, -52, 46);
+
+            // East Outer Wall (x = 38)
+            buildWallSegment(38, -44, 38, 46);
+
+            // North Outer Wall (z = -44)
+            buildWallSegment(-52, -44, 38, -44);
+
+            // Inner Cloister Wall (회랑 담장) flanking Heungnyemun (z = 16)
+            buildWallSegment(-24, 16, -11, 16);
+            buildWallSegment(11, 16, 24, 16);
+            // Side cloister walls enclosing Geunjeongjeon courtyard (x = -24 and x = 24)
+            buildWallSegment(-24, -38, -24, 16);
+            buildWallSegment(24, -38, 24, 16);
+            // Small side gate connecting Geunjeongjeon courtyard to Gyeonghoeru
+            fillBricks(-25, 1, -19, -23, 3, -17, null);
+
+            // Corner Watchtower Pavilion at Southeast corner (동십자각 느낌의 망루)
+            fillBricks(36, 1, 44, 40, 5, 48, 'STONE_LIGHT');
+            for (let y = 6; y <= 7; y++) {
+                fillBricks(37, y, 45, 39, y, 47, 'PILLAR_RED');
+            }
+            buildTraditionalRoof(38, 46, 4, 4, 8, 3, false);
+
+            // ------------------------------------------------------------------------
+            // C. GWANGHWAMUN (광화문 - 남쪽 정문, 석축 위 3개 홍예문 & 중층 문루)
+            // Center: (0, z=46)
+            // ------------------------------------------------------------------------
+            const gwZ = 46;
+            // 1. Massive Granite Base (육축: x=-14..14, z=42..50, y=1..6)
+            fillBricks(-14, 1, gwZ - 4, 14, 5, gwZ + 4, 'STONE_LIGHT');
+            // Battlement parapet bricks (여장) around top of stone base (y=6)
+            for (let x = -14; x <= 14; x++) {
+                for (let z = gwZ - 4; z <= gwZ + 4; z++) {
+                    if (x === -14 || x === 14 || z === gwZ - 4 || z === gwZ + 4) {
+                        if ((x + z) % 2 === 0) setBrick(x, 6, z, 'STONE_MID');
+                    }
+                }
+            }
+
+            // Carve out 3 Arched Gates (홍예문 3곳: 중앙 어도 & 좌우 협문)
+            const arches = [
+                { cx: 0, halfW: 2, archH: 4 },  // Central King's Arch
+                { cx: -8, halfW: 1, archH: 3 }, // Left Arch
+                { cx: 8, halfW: 1, archH: 3 }   // Right Arch
+            ];
+            arches.forEach(a => {
+                for (let z = gwZ - 4; z <= gwZ + 4; z++) {
+                    for (let x = a.cx - a.halfW; x <= a.cx + a.halfW; x++) {
+                        for (let y = 1; y <= a.archH; y++) {
+                            // Round top corners of arch
+                            if (y === a.archH && Math.abs(x - a.cx) === a.halfW && a.halfW > 1) continue;
+                            setBrick(x, y, z, null);
+                        }
+                    }
+                }
+                // Red wooden gate doors recessed inside the arch
+                fillBricks(a.cx - a.halfW, 1, gwZ, a.cx + a.halfW, a.archH - 1, gwZ, 'PILLAR_RED');
+                // Paved floor through the arch
+                fillBricks(a.cx - a.halfW, 1, gwZ - 4, a.cx + a.halfW, 1, gwZ + 4, 'STONE_MID');
+            });
+
+            // 2. First Story Wooden Pavilion on Stone Base (y=6..8)
+            fillBricks(-10, 6, gwZ - 2, 10, 8, gwZ + 2, 'WALL_WHITE');
+            for (let x = -11; x <= 11; x += 2) {
+                for (let y = 6; y <= 8; y++) {
+                    setBrick(x, y, gwZ - 3, 'PILLAR_RED');
+                    setBrick(x, y, gwZ + 3, 'PILLAR_RED');
+                }
+            }
+            for (let z = gwZ - 3; z <= gwZ + 3; z += 2) {
+                for (let y = 6; y <= 8; y++) {
+                    setBrick(-11, y, z, 'PILLAR_RED');
+                    setBrick(11, y, z, 'PILLAR_RED');
+                }
+            }
+
+            // Lower Tier Roof Skirt (1층 지붕: y=9..10)
+            buildTraditionalRoof(0, gwZ, 13, 5, 9, 2, false);
+
+            // 3. Second Story Wooden Pavilion (2층 문루: y=11..12)
+            fillBricks(-8, 11, gwZ - 1, 8, 12, gwZ + 1, 'WALL_WHITE');
+            for (let x = -9; x <= 9; x += 2) {
+                for (let y = 11; y <= 12; y++) {
+                    setBrick(x, y, gwZ - 2, 'PILLAR_RED');
+                    setBrick(x, y, gwZ + 2, 'PILLAR_RED');
+                }
+            }
+            // Gwanghwamun Signboard (광화문 현판 - 흰 바탕과 금빛 테두리)
+            fillBricks(-2, 12, gwZ + 3, 2, 12, gwZ + 3, 'GOLD_POINT');
+            fillBricks(-1, 12, gwZ + 3, 1, 12, gwZ + 3, 'WALL_WHITE');
+
+            // Upper Tier Main Paljak Roof (2층 지붕: y=13..15)
+            buildTraditionalRoof(0, gwZ, 11, 4, 13, 3, true);
+
+            // ------------------------------------------------------------------------
+            // D. HEUNGNYEMUN (흥례문 - 중층 외대문)
+            // Center: (0, z=16)
+            // ------------------------------------------------------------------------
+            const hmZ = 16;
+            // Raised stone platform (기단: y=1..2)
+            fillBricks(-10, 1, hmZ - 3, 10, 2, hmZ + 3, 'STONE_LIGHT');
+            // Central passage openings (3 bays)
+            for (let bx of [-4, 0, 4]) {
+                fillBricks(bx - 1, 1, hmZ - 3, bx + 1, 2, hmZ + 3, 'STONE_MID');
+            }
+            // 1st floor pillars & walls (y=3..5)
+            fillBricks(-8, 3, hmZ - 2, 8, 5, hmZ + 2, 'PILLAR_RED');
+            for (let bx of [-4, 0, 4]) {
+                fillBricks(bx - 1, 3, hmZ - 2, bx + 1, 4, hmZ + 2, null); // Open gate bays
+            }
+            // 1st tier roof (y=6..7)
+            buildTraditionalRoof(0, hmZ, 11, 4, 6, 2, false);
+            // 2nd floor pillars (y=8..9)
+            fillBricks(-6, 8, hmZ - 1, 6, 9, hmZ + 1, 'PILLAR_RED');
+            // 2nd tier roof (y=10..12)
+            buildTraditionalRoof(0, hmZ, 9, 3, 10, 3, true);
+
+            // ------------------------------------------------------------------------
+            // E. GEUNJEONGJEON (근정전 - 2단 월대 위 2층 지붕 정전)
+            // Center: (0, z=-18)
+            // ------------------------------------------------------------------------
+            const gjZ = -18;
+
+            // 1. First Woldae (하월대 - Lower Stone Terrace: x=-16..16, z=-30..-6, y=1..3)
+            fillBricks(-16, 1, gjZ - 12, 16, 3, gjZ + 12, 'STONE_LIGHT');
+            // Stone balustrade pillars (하월대 난간석: y=4)
+            for (let x = -16; x <= 16; x += 2) {
+                setBrick(x, 4, gjZ - 12, 'STONE_LIGHT');
+                if (Math.abs(x) > 3) setBrick(x, 4, gjZ + 12, 'STONE_LIGHT');
+            }
+            for (let z = gjZ - 12; z <= gjZ + 12; z += 2) {
+                setBrick(-16, 4, z, 'STONE_LIGHT');
+                setBrick(16, 4, z, 'STONE_LIGHT');
+            }
+
+            // 2. Second Woldae (상월대 - Upper Stone Terrace: x=-13..13, z=-27..-9, y=4..6)
+            fillBricks(-13, 4, gjZ - 9, 13, 6, gjZ + 9, 'STONE_LIGHT');
+            // Stone balustrade pillars (상월대 난간석: y=7)
+            for (let x = -13; x <= 13; x += 2) {
+                setBrick(x, 7, gjZ - 9, 'STONE_LIGHT');
+                if (Math.abs(x) > 3) setBrick(x, 7, gjZ + 9, 'STONE_LIGHT');
+            }
+            for (let z = gjZ - 9; z <= gjZ + 9; z += 2) {
+                setBrick(-13, 7, z, 'STONE_LIGHT');
+                setBrick(13, 7, z, 'STONE_LIGHT');
+            }
+
+            // Grand Front Staircase & Dragon-carved 답도 (z = gjZ+10 .. gjZ+16)
+            for (let step = 0; step < 6; step++) {
+                const sy = 6 - step;
+                const sz = gjZ + 9 + step;
+                fillBricks(-3, 1, sz, 3, sy, sz, 'STONE_MID');
+                // Central carved dragon slab (답도)
+                fillBricks(-1, 1, sz, 1, sy, sz, 'STONE_LIGHT');
+            }
+
+            // 3. Lower Hall Story (근정전 1층 몸체: x=-10..10, z=-24..-12, y=7..11)
+            fillBricks(-9, 7, gjZ - 5, 9, 11, gjZ + 5, 'WALL_WHITE');
+            // Red colonnade & lattice doors around the perimeter
+            for (let x = -10; x <= 10; x++) {
+                for (let z = gjZ - 6; z <= gjZ + 6; z++) {
+                    const onBorder = (x === -10 || x === 10 || z === gjZ - 6 || z === gjZ + 6);
+                    if (!onBorder) continue;
+                    const isPillar = (x % 2 === 0 && z % 2 === 0);
+                    for (let y = 7; y <= 11; y++) {
+                        if (isPillar) {
+                            setBrick(x, y, z, 'PILLAR_RED');
+                        } else if (y <= 9) {
+                            setBrick(x, y, z, 'PILLAR_RED'); // Lower wooden door panel
+                        } else {
+                            setBrick(x, y, z, 'GOLD_POINT'); // Golden lattice window (교살창)
+                        }
+                    }
+                }
+            }
+            // Royal Throne (어좌) glimpse at the center front door
+            fillBricks(-1, 7, gjZ + 6, 1, 9, gjZ + 6, 'GOLD_POINT');
+
+            // 4. First Story Roof Skirt (근정전 1층 지붕: y=12..14)
+            buildTraditionalRoof(0, gjZ, 13, 9, 12, 3, false);
+
+            // 5. Second Story Body (근정전 2층 몸체: x=-8..8, z=-22..-14, y=15..17)
+            fillBricks(-7, 15, gjZ - 3, 7, 17, gjZ + 3, 'WALL_WHITE');
+            for (let x = -8; x <= 8; x++) {
+                for (let z = gjZ - 4; z <= gjZ + 4; z++) {
+                    const onBorder = (x === -8 || x === 8 || z === gjZ - 4 || z === gjZ + 4);
+                    if (!onBorder) continue;
+                    for (let y = 15; y <= 17; y++) {
+                        setBrick(x, y, z, (x + z) % 2 === 0 ? 'PILLAR_RED' : 'DANCHEONG_G');
+                    }
+                }
+            }
+            // Geunjeongjeon Signboard (근정전 현판)
+            fillBricks(-2, 17, gjZ + 5, 2, 17, gjZ + 5, 'GOLD_POINT');
+            fillBricks(-1, 17, gjZ + 5, 1, 17, gjZ + 5, 'WALL_WHITE');
+
+            // 6. Grand Upper Paljak Roof (근정전 2층 지붕: y=18..22)
+            buildTraditionalRoof(0, gjZ, 11, 7, 18, 5, true);
+
+            // ------------------------------------------------------------------------
+            // F. GYEONGHOERU (경회루 - 연못 위 24개 돌기둥과 중층 누각)
+            // Center: (x=-38, z=-18)
+            // ------------------------------------------------------------------------
+            const ghX = -38;
+            const ghZ = -18;
+
+            // 1. Stone-rimmed Lotus Pond (방지 연못: x=-50..-26, z=-32..-4, y=1)
+            fillBricks(ghX - 12, 1, ghZ - 14, ghX + 12, 1, ghZ + 14, 'STONE_MID'); // Pond stone rim
+            fillBricks(ghX - 11, 1, ghZ - 13, ghX + 11, 1, ghZ + 13, 'WATER_TRANS'); // Translucent blue water bricks
+
+            // Small decorative Pine Tree Island (만세산 인공섬) at north side of pond
+            fillBricks(ghX - 9, 1, ghZ - 11, ghX - 6, 2, ghZ - 8, 'BASE_GRASS');
+            setBrick(ghX - 7, 3, ghZ - 9, 'PINE_TRUNK');
+            fillBricks(ghX - 8, 4, ghZ - 10, ghX - 6, 5, ghZ - 8, 'PINE_NEEDLE');
+
+            // 2. Artificial Island Base for Gyeonghoeru (x=-44..-30, z=-25..-11, y=1..2)
+            const pX = -37;
+            const pZ = -18;
+            fillBricks(pX - 7, 1, pZ - 7, pX + 7, 2, pZ + 7, 'STONE_LIGHT');
+
+            // Three Stone Bridges (돌다리 3개) connecting east bank to Gyeonghoeru island
+            for (let bz of [pZ - 4, pZ, pZ + 4]) {
+                fillBricks(pX + 8, 2, bz, ghX + 12, 2, bz, 'STONE_LIGHT');
+                setBrick(pX + 10, 3, bz, 'STONE_MID'); // Bridge railing stud
+            }
+
+            // 3. Tall Granite Pillars on First Floor (석주 기둥: y=3..6)
+            // Grid of 4x4 stone columns so you can see right through the lower floor over the pond
+            for (let x = pX - 6; x <= pX + 6; x += 4) {
+                for (let z = pZ - 6; z <= pZ + 6; z += 4) {
+                    for (let y = 3; y <= 6; y++) {
+                        setBrick(x, y, z, 'STONE_LIGHT');
+                    }
+                }
+            }
+
+            // 4. Elevated Wooden Banquet Deck & Dancheong Support (2층 누마루 바닥: y=7)
+            fillBricks(pX - 7, 7, pZ - 7, pX + 7, 7, pZ + 7, 'PILLAR_RED');
+            buildDancheongPerimeter(pX - 7, pZ - 7, pX + 7, pZ + 7, 7, 1);
+
+            // 5. Open Wooden Pavilion Columns & Balustrade (2층 누각 기둥: y=8..10)
+            for (let x = pX - 6; x <= pX + 6; x += 3) {
+                for (let z = pZ - 6; z <= pZ + 6; z += 3) {
+                    const isOuter = (Math.abs(x - pX) === 6 || Math.abs(z - pZ) === 6);
+                    for (let y = 8; y <= 10; y++) {
+                        setBrick(x, y, z, isOuter ? 'PILLAR_RED' : 'GOLD_POINT');
+                    }
+                }
+            }
+            // Decorative red railings around the 2nd floor deck (y=8)
+            for (let x = pX - 7; x <= pX + 7; x++) {
+                setBrick(x, 8, pZ - 7, 'PILLAR_RED');
+                setBrick(x, 8, pZ + 7, 'PILLAR_RED');
+            }
+            for (let z = pZ - 7; z <= pZ + 7; z++) {
+                setBrick(pX - 7, 8, z, 'PILLAR_RED');
+                setBrick(pX + 7, 8, z, 'PILLAR_RED');
+            }
+
+            // 6. Gyeonghoeru Grand Roof (경회루 팔작지붕: y=11..15)
+            buildTraditionalRoof(pX, pZ, 9, 9, 11, 5, true);
+
+            // ------------------------------------------------------------------------
+            // G. LANDSCAPING PINE TREES (궁궐 소나무 숲)
+            // ------------------------------------------------------------------------
+            function buildLegoPineTree(tx, tz) {
+                fillBricks(tx, 1, tz, tx, 3, tz, 'PINE_TRUNK');
+                fillBricks(tx - 2, 4, tz - 2, tx + 2, 4, tz + 2, 'PINE_NEEDLE');
+                fillBricks(tx - 1, 5, tz - 1, tx + 1, 6, tz + 1, 'PINE_NEEDLE');
+                setBrick(tx, 7, tz, 'PINE_NEEDLE');
+            }
+
+            const treeCoords = [
+                [-32, 34], [-42, 28], [-28, 22], [-45, 12],
+                [-46, -37], [-32, -38], [-18, -40], [18, -40],
+                [30, -34], [31, -18], [31, 0], [30, 26], [22, 34]
+            ];
+            treeCoords.forEach(([tx, tz]) => buildLegoPineTree(tx, tz));
+        }
+
+        // ============================================================================
+        // 6. INSTANCED MESH BUILDER & ANIMATION SYSTEM
+        // ============================================================================
+        function buildInstancedMeshesFromVoxels() {
+            // Clear any existing meshes
+            Object.values(colorBatches).forEach(batch => {
+                if (batch.mesh) scene.remove(batch.mesh);
+            });
+            allBrickEntries.length = 0;
+
+            const brickGeo = createLegoBrickGeometry();
+
+            // Group voxel coordinates by colorKey
+            const grouped = {};
+            Object.keys(PALETTE).forEach(k => grouped[k] = []);
+
+            voxelGrid.forEach((colorKey, coordStr) => {
+                const [x, y, z] = coordStr.split(',').map(Number);
+                if (!grouped[colorKey]) grouped[colorKey] = [];
+                grouped[colorKey].push({ x, y, z, colorKey });
+            });
+
+            let totalBricks = 0;
+
+            Object.keys(grouped).forEach(colorKey => {
+                const list = grouped[colorKey];
+                if (list.length === 0) return;
+
+                // Sort bricks bottom-to-top (Y), then front-to-back (Z), then X
+                list.sort((a, b) => (a.y - b.y) || (b.z - a.z) || (a.x - b.x));
+
+                const p = PALETTE[colorKey];
+                const mat = new THREE.MeshStandardMaterial({
+                    color: p.hex,
+                    roughness: p.roughness,
+                    metalness: p.metalness,
+                    transparent: !!p.transparent,
+                    opacity: p.opacity !== undefined ? p.opacity : 1.0
+                });
+
+                const instMesh = new THREE.InstancedMesh(brickGeo, mat, list.length);
+                instMesh.castShadow = !p.transparent;
+                instMesh.receiveShadow = true;
+
+                const dummy = new THREE.Object3D();
+                list.forEach((brick, idx) => {
+                    brick.instanceIndex = idx;
+                    brick.batchKey = colorKey;
+                    // Subtle deterministic jitter so assembly drop feels organic
+                    brick.orderOffset = ((Math.sin(brick.x * 12.9898 + brick.z * 78.233) * 43758.5453) % 1 + 1) % 1;
+
+                    dummy.position.set(brick.x * STUD_PITCH, brick.y * BRICK_HEIGHT, brick.z * STUD_PITCH);
+                    dummy.scale.set(1, 1, 1);
+                    dummy.updateMatrix();
+                    instMesh.setMatrixAt(idx, dummy.matrix);
+
+                    allBrickEntries.push(brick);
+                    totalBricks++;
+                });
+
+                instMesh.instanceMatrix.needsUpdate = true;
+                scene.add(instMesh);
+
+                colorBatches[colorKey] = {
+                    mesh: instMesh,
+                    bricks: list
+                };
+            });
+
+            // Update total brick counter badge
+            const counterEl = document.getElementById('brick-counter');
+            if (counterEl) {
+                counterEl.textContent = `총 ${totalBricks.toLocaleString()} 브릭`;
+            }
+        }
+
+        // Updates brick positions/scales based on `assemblyProgress` (0.0 to 1.0)
+        const tempMatrix = new THREE.Matrix4();
+        const tempPos = new THREE.Vector3();
+        const tempQuat = new THREE.Quaternion();
+        const tempScale = new THREE.Vector3();
+
+        function updateBricksForAssembly(progress) {
+            // Map progress (0..1) across layers (-1 .. maxLayerY + 3)
+            const totalVirtualLayers = maxLayerY + 3.5;
+            const currentVirtualLayer = progress * totalVirtualLayers;
+
+            Object.keys(colorBatches).forEach(colorKey => {
+                const batch = colorBatches[colorKey];
+                const mesh = batch.mesh;
+
+                for (let i = 0; i < batch.bricks.length; i++) {
+                    const b = batch.bricks[i];
+                    const brickStartLayer = b.y + b.orderOffset * 0.65;
+                    const localT = (currentVirtualLayer - brickStartLayer) / 1.4;
+
+                    if (localT <= 0) {
+                        // Hidden (not yet placed)
+                        tempPos.set(b.x * STUD_PITCH, -100, b.z * STUD_PITCH);
+                        tempScale.set(0.0001, 0.0001, 0.0001);
+                    } else if (localT >= 1 || progress >= 0.999) {
+                        // Locked into final LEGO stud position
+                        tempPos.set(b.x * STUD_PITCH, b.y * BRICK_HEIGHT, b.z * STUD_PITCH);
+                        tempScale.set(1, 1, 1);
+                    } else {
+                        // Dropping from above with snappy LEGO click bounce
+                        const easeOut = 1 - Math.pow(1 - localT, 3);
+                        const dropHeight = (1 - easeOut) * 9.5;
+                        const s = Math.min(1, localT * 2.2);
+                        tempPos.set(
+                            b.x * STUD_PITCH,
+                            b.y * BRICK_HEIGHT + dropHeight,
+                            b.z * STUD_PITCH
+                        );
+                        tempScale.set(s, s, s);
+                    }
+
+                    tempMatrix.compose(tempPos, tempQuat, tempScale);
+                    mesh.setMatrixAt(i, tempMatrix);
+                }
+                mesh.instanceMatrix.needsUpdate = true;
+            });
+
+            // Sync UI elements
+            const slider = document.getElementById('build-slider');
+            if (slider && Math.abs(slider.value - progress * 1000) > 1) {
+                slider.value = Math.round(progress * 1000);
+            }
+
+            const currentLayerNum = Math.min(maxLayerY, Math.max(0, Math.floor(progress * (maxLayerY + 1))));
+            const layerInd = document.getElementById('layer-indicator');
+            if (layerInd) {
+                layerInd.textContent = `층: ${currentLayerNum} / ${maxLayerY}`;
+            }
+
+            const stageText = document.getElementById('build-stage-text');
+            if (stageText) {
+                const pct = Math.round(progress * 100);
+                let stageDesc = '완성 상태';
+                if (pct === 0) stageDesc = '기초 준비 중';
+                else if (pct < 15) stageDesc = '궁궐 터·연못·기단 조립 중';
+                else if (pct < 38) stageDesc = '광화문 석축·2단 월대·담장 조립 중';
+                else if (pct < 68) stageDesc = '전각 붉은 기둥·단청 공포 조립 중';
+                else if (pct < 99) stageDesc = '팔작지붕 진회색 기와·용마루 조립 중';
+                stageText.textContent = `${stageDesc} (${pct}%)`;
+            }
+        }
+
+        // ============================================================================
+        // 7. KOREAN 3D LABELS & UI CONTROLS
+        // ============================================================================
+        function initKoreanLabels() {
+            const container = document.getElementById('labels-container');
+            container.innerHTML = '';
+
+            KOREAN_LABELS.forEach(item => {
+                const el = document.createElement('div');
+                el.className = 'building-label bg-slate-900/92 backdrop-blur-md border border-amber-400/60 px-3.5 py-2 rounded-xl shadow-xl text-center';
+                el.innerHTML = `
+                    <div class="text-xs sm:text-sm font-black text-amber-300 tracking-tight whitespace-nowrap">${item.name}</div>
+                    <div class="text-[10px] text-slate-300 font-medium whitespace-nowrap hidden sm:block">${item.subtitle}</div>
+                `;
+                el.onclick = () => focusBuilding(item.id);
+                container.appendChild(el);
+                labelElements[item.id] = el;
+            });
+        }
+
+        function updateKoreanLabels() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const halfW = width / 2;
+            const halfH = height / 2;
+
+            KOREAN_LABELS.forEach(item => {
+                const el = labelElements[item.id];
+                if (!el) return;
+
+                if (!labelsVisible) {
+                    el.style.opacity = '0';
+                    el.style.pointerEvents = 'none';
+                    return;
+                }
+
+                // Project 3D world position to 2D screen coordinates
+                const projected = item.pos.clone().project(camera);
+
+                // Check if behind camera
+                if (projected.z > 1) {
+                    el.style.opacity = '0';
+                    el.style.pointerEvents = 'none';
+                    return;
+                }
+
+                const screenX = (projected.x * halfW) + halfW;
+                const screenY = -(projected.y * halfH) + halfH;
+
+                el.style.left = `${screenX}px`;
+                el.style.top = `${screenY}px`;
+                el.style.opacity = '1';
+                el.style.pointerEvents = 'auto';
+            });
+        }
+
+        // Assembly Button Handlers
+        function startAssemblyAnimation() {
+            if (assemblyProgress >= 0.98) {
+                assemblyProgress = 0.0;
+            }
+            isAssembling = true;
+            isPaused = false;
+
+            document.getElementById('btn-assemble-text').textContent = '처음부터 다시 조립';
+            const pauseBtn = document.getElementById('btn-pause');
+            pauseBtn.classList.remove('hidden');
+            pauseBtn.classList.add('flex');
+            document.getElementById('btn-pause-text').textContent = '일시정지';
+        }
+
+        function togglePauseAssembly() {
+            if (!isAssembling) return;
+            isPaused = !isPaused;
+            document.getElementById('btn-pause-text').textContent = isPaused ? '계속 조립' : '일시정지';
+        }
+
+        function instantComplete() {
+            isAssembling = false;
+            isPaused = false;
+            assemblyProgress = 1.0;
+            updateBricksForAssembly(1.0);
+            document.getElementById('btn-assemble-text').textContent = '조립하기';
+            const pauseBtn = document.getElementById('btn-pause');
+            pauseBtn.classList.add('hidden');
+            pauseBtn.classList.remove('flex');
+        }
+
+        function setSpeed(spd) {
+            assemblySpeed = spd;
+            document.querySelectorAll('.speed-btn').forEach(btn => {
+                btn.className = 'speed-btn px-2.5 py-1 rounded-lg text-xs font-bold text-slate-400 hover:text-white transition';
+            });
+            const activeBtn = document.getElementById(`speed-${spd}`);
+            if (activeBtn) {
+                activeBtn.className = 'speed-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500 text-slate-950 transition';
+            }
+        }
+
+        function toggleLabels() {
+            labelsVisible = !labelsVisible;
+            const btn = document.getElementById('btn-toggle-labels');
+            if (labelsVisible) {
+                btn.textContent = '이름표 켜짐';
+                btn.className = 'px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white transition active:scale-95';
+            } else {
+                btn.textContent = '이름표 꺼짐';
+                btn.className = 'px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 transition active:scale-95';
+            }
+        }
+
+        function toggleDayNight() {
+            isNightMode = !isNightMode;
+            const btn = document.getElementById('btn-toggle-time');
+            if (isNightMode) {
+                scene.background = new THREE.Color(0x090d16);
+                scene.fog.color.setHex(0x090d16);
+                ambientLight.intensity = 0.35;
+                hemiLight.intensity = 0.25;
+                sunLight.intensity = 0.75;
+                sunLight.color.setHex(0xffd599);
+                btn.textContent = '🌙 야간 개장';
+                btn.className = 'px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 transition active:scale-95';
+            } else {
+                scene.background = new THREE.Color(0x1e293b);
+                scene.fog.color.setHex(0x1e293b);
+                ambientLight.intensity = 0.65;
+                hemiLight.intensity = 0.55;
+                sunLight.intensity = 1.15;
+                sunLight.color.setHex(0xfffbeb);
+                btn.textContent = '☀️ 주간';
+                btn.className = 'px-3 py-1.5 text-xs sm:text-sm font-bold rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition active:scale-95';
+            }
+        }
+
+        function focusBuilding(id) {
+            if (id === 'all') {
+                cameraTargetTween = {
+                    camPos: new THREE.Vector3(48, 52, 92),
+                    lookAt: new THREE.Vector3(-4, 4, 2)
+                };
+                return;
+            }
+            const found = KOREAN_LABELS.find(l => l.id === id);
+            if (found) {
+                cameraTargetTween = {
+                    camPos: found.camPos.clone(),
+                    lookAt: found.lookAt.clone()
+                };
+            }
+        }
+
+        // ============================================================================
+        // 8. INITIALIZATION & MAIN ANIMATION LOOP
+        // ============================================================================
+        function initApp() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1e293b);
+            scene.fog = new THREE.FogExp2(0x1e293b, 0.0032);
+
+            camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.5, 450);
+            camera.position.set(48, 52, 92);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // OrbitControls for Mouse Rotate / Zoom / Pan
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.target.set(-4, 4, 2);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.06;
+            controls.maxPolarAngle = Math.PI / 2 - 0.03; // Keep camera above the baseplate
+            controls.minDistance = 15;
+            controls.maxDistance = 210;
+
+            // Cancel camera tween if user manually interacts
+            renderer.domElement.addEventListener('pointerdown', () => {
+                cameraTargetTween = null;
+            });
+
+            // Lighting Setup for glossy plastic LEGO bricks
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+            scene.add(ambientLight);
+
+            hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x334155, 0.55);
+            hemiLight.position.set(0, 80, 0);
+            scene.add(hemiLight);
+
+            sunLight = new THREE.DirectionalLight(0xfffbeb, 1.15);
+            sunLight.position.set(65, 95, 75);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 10;
+            sunLight.shadow.camera.far = 260;
+            const d = 75;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            sunLight.shadow.bias = -0.0005;
+            scene.add(sunLight);
+
+            // Dark wooden display table beneath the LEGO baseplate
+            const tableGeo = new THREE.BoxGeometry(104, 2.2, 110);
+            const tableMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7 });
+            const tableMesh = new THREE.Mesh(tableGeo, tableMat);
+            tableMesh.position.set(-6, -1.15, 3);
+            tableMesh.receiveShadow = true;
+            scene.add(tableMesh);
+
+            // Build Gyeongbokgung Voxels & InstancedMeshes
+            generateGyeongbokgungBricks();
+            buildInstancedMeshesFromVoxels();
+            initKoreanLabels();
+            updateBricksForAssembly(1.0);
+
+            // Slider scrub listener
+            const slider = document.getElementById('build-slider');
+            slider.addEventListener('input', (e) => {
+                isAssembling = false;
+                isPaused = false;
+                document.getElementById('btn-pause').classList.add('hidden');
+                document.getElementById('btn-pause').classList.remove('flex');
+                assemblyProgress = parseFloat(e.target.value) / 1000;
+                updateBricksForAssembly(assemblyProgress);
+            });
+
+            // Responsive resize listener
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        let lastTime = performance.now();
+
+        function animate(now = performance.now()) {
+            requestAnimationFrame(animate);
+
+            const dt = Math.min(0.05, (now - lastTime) / 1000);
+            lastTime = now;
+
+            // Handle smooth camera preset transition
+            if (cameraTargetTween) {
+                camera.position.lerp(cameraTargetTween.camPos, 0.07);
+                controls.target.lerp(cameraTargetTween.lookAt, 0.07);
+                if (camera.position.distanceTo(cameraTargetTween.camPos) < 0.35) {
+                    cameraTargetTween = null;
+                }
+            }
+
+            // Handle brick-by-brick assembly animation from bottom to top
+            if (isAssembling && !isPaused) {
+                assemblyProgress += dt * 0.14 * assemblySpeed;
+                if (assemblyProgress >= 1.0) {
+                    assemblyProgress = 1.0;
+                    isAssembling = false;
+                    const pauseBtn = document.getElementById('btn-pause');
+                    pauseBtn.classList.add('hidden');
+                    pauseBtn.classList.remove('flex');
+                    document.getElementById('btn-assemble-text').textContent = '조립하기';
+                }
+                updateBricksForAssembly(assemblyProgress);
+            }
+
+            controls.update();
+            updateKoreanLabels();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function () {
+            initApp();
+            animate();
+        };
+    </script>
+</body>
+</html>

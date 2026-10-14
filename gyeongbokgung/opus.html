@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>레고 경복궁</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#cfe3f2;
+    font-family:"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif}
+  #ui{position:fixed;left:16px;top:16px;z-index:10;background:rgba(255,255,255,.9);
+    border-radius:12px;padding:12px 14px;box-shadow:0 4px 18px rgba(0,0,0,.18);max-width:290px}
+  #ui h1{font-size:18px;margin:0 0 4px}
+  #ui p{font-size:12px;color:#555;margin:0 0 10px;line-height:1.5}
+  .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  button{font:inherit;font-size:14px;font-weight:700;border:0;border-radius:6px;padding:8px 14px;
+    cursor:pointer;background:#d62828;color:#fff;box-shadow:0 3px 0 #8f1717}
+  button:active{transform:translateY(2px);box-shadow:0 1px 0 #8f1717}
+  button.sec{background:#f2c200;color:#222;box-shadow:0 3px 0 #a88700}
+  button.sec:active{box-shadow:0 1px 0 #a88700}
+  select{font:inherit;font-size:13px;padding:6px;border-radius:6px;border:1px solid #bbb}
+  #count{font-size:12px;color:#333;margin-top:8px;font-variant-numeric:tabular-nums}
+  .label{font-size:15px;font-weight:800;color:#222;background:#fff;border:3px solid #d62828;
+    border-radius:8px;padding:3px 10px;white-space:nowrap;box-shadow:0 3px 0 rgba(0,0,0,.25);
+    transition:opacity .4s, transform .4s}
+  .label.hide{opacity:0;transform:translateY(8px)}
+  @media (max-width:520px){#ui{left:8px;right:8px;top:8px;max-width:none}}
+</style>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<div id="ui">
+  <h1>🧱 레고 경복궁</h1>
+  <p>드래그: 회전 · 휠/핀치: 확대 · 오른쪽 드래그: 이동</p>
+  <div class="row">
+    <button id="build">조립하기</button>
+    <button id="skip" class="sec">완성 보기</button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <select id="speed">
+      <option value="60">느리게</option>
+      <option value="30" selected>보통</option>
+      <option value="12">빠르게</option>
+    </select>
+    <button id="view" class="sec">시점 초기화</button>
+  </div>
+  <div id="count"></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+/* ---------- 레고 단위 ---------- */
+const P = 0.4;               // 플레이트 높이 (브릭 = 플레이트 3장)
+const C = {
+  red:0xb3261e, door:0x7c2d1d, green:0x2e8b57, blue:0x1f5fa8,
+  roof:0x3b3f45, roofB:0x33373c, ridge:0x24272b,
+  stone:0xb8b2a4, stoneL:0xd8d2c4, stoneD:0x9a9486,
+  wall:0xa9553c, pave:0xcfc8b8, pave2:0xc6bfae, paveD:0xb2aa96,
+  water:0x3c8fd8, wood:0x8b5a2b, grass:0x5a9a3c, leaf:0x3f7f2f, trunk:0x6b4423
+};
+
+/* ---------- 복셀 빌더 ---------- */
+const els = [];
+const occ = new Set();
+let group = null;
+const key = (x,y,z) => x+','+y+','+z;
+
+function add(x,y,z,h,color,opt={}){
+  for(let k=0;k<h;k++) if(occ.has(key(x,y+k,z))) return;
+  for(let k=0;k<h;k++) occ.add(key(x,y+k,z));
+  els.push({x,y,z,h,color,tile:!!opt.tile,group});
+}
+function fill(x0,x1,z0,z1,y,h,c,opt){
+  for(let x=x0;x<=x1;x++) for(let z=z0;z<=z1;z++)
+    add(x,y,z,h,typeof c==='function'?c(x,z):c,opt);
+}
+function ringCells(x0,x1,z0,z1){
+  const a=[];
+  for(let x=x0;x<=x1;x++){ a.push([x,z0]); if(z1!==z0) a.push([x,z1]); }
+  for(let z=z0+1;z<z1;z++){ a.push([x0,z]); if(x1!==x0) a.push([x1,z]); }
+  return a;
+}
+function ring(x0,x1,z0,z1,y,h,c){
+  for(const [x,z] of ringCells(x0,x1,z0,z1)) add(x,y,z,h,typeof c==='function'?c(x,z):c);
+}
+function stack(x,z,y,height,c){ // 높이(플레이트)만큼 브릭+플레이트로 쌓기
+  while(height>=3){ add(x,y,z,3,c); y+=3; height-=3; }
+  while(height>0){ add(x,y,z,1,c); y+=1; height-=1; }
+}
+const mod = (a,n) => ((a%n)+n)%n;
+
+/* ---------- 전통 건축 부품 ---------- */
+// 기둥(빨강) + 문/벽
+function hallWalls(x0,x1,z0,z1,y,colH,mode){
+  for(const [x,z] of ringCells(x0,x1,z0,z1)){
+    const onZ = z===z0||z===z1, onX = x===x0||x===x1;
+    const isCol = (onZ&&onX) || (onZ&&(x-x0)%2===0) || (onX&&(z-z0)%2===0);
+    for(let k=0;k<colH;k++){
+      const yy=y+k*3;
+      if(isCol) add(x,yy,z,3,C.red);
+      else if(mode==='closed' || (mode==='gate' && onX && !onZ)) add(x,yy,z,3,C.door);
+    }
+  }
+  return y+colH*3;
+}
+// 단청 띠(초록·파랑·빨강) + 공포 플레이트
+function dancheong(x0,x1,z0,z1,y){
+  const pat=[C.green,C.blue,C.green,C.red];
+  ring(x0,x1,z0,z1,y,3,(x,z)=>pat[mod(x+z,4)]);
+  const pat2=[C.blue,C.green,C.red];
+  ring(x0,x1,z0,z1,y+3,1,(x,z)=>pat2[mod(x+z,3)]);
+  ring(x0-1,x1+1,z0-1,z1+1,y+3,1,(x,z)=>pat2[mod(x+z+1,3)]);
+  return y+4;
+}
+// 계단식 기와지붕 (진회색 플레이트)
+function roof(x0,x1,z0,z1,y,maxL=99,fillLast=false){
+  for(let k=0;k<maxL;k++){
+    const a0=x0+k,a1=x1-k,b0=z0+k,b1=z1-k;
+    const w=a1-a0+1, d=b1-b0+1;
+    const tile=(x,z)=>{
+      const p=(z===b0||z===b1)?x:z;
+      return mod(p,2)?C.roof:C.roofB;
+    };
+    if(w<=3||d<=3){
+      fill(a0,a1,b0,b1,y+k,1,C.roof);
+      if(w>=d){
+        const c0=b0+Math.floor((d-1)/2), c1=b1-Math.floor((d-1)/2);
+        fill(a0,a1,c0,c1,y+k+1,1,C.ridge);
+        add(a0,y+k+2,c0,1,C.ridge); add(a1,y+k+2,c0,1,C.ridge); // 취두
+      }else{
+        const c0=a0+Math.floor((w-1)/2), c1=a1-Math.floor((w-1)/2);
+        fill(c0,c1,b0,b1,y+k+1,1,C.ridge);
+        add(c0,y+k+2,b0,1,C.ridge); add(c0,y+k+2,b1,1,C.ridge);
+      }
+      return y+k+3;
+    }
+    if(fillLast && k===maxL-1) fill(a0,a1,b0,b1,y+k,1,tile);
+    else ring(a0,a1,b0,b1,y+k,1,tile);
+    if(k===0){ // 처마 끝 솟음
+      for(const [x,z] of [[a0,b0],[a1,b0],[a0,b1],[a1,b1]]){
+        add(x,y+1,z,1,C.roof); add(x,y+2,z,1,C.ridge);
+      }
+    }
+  }
+  return y+maxL;
+}
+// 전각 한 채 (단층 또는 중층)
+function hall(o){
+  let y=hallWalls(o.x0,o.x1,o.z0,o.z1,o.y,o.colH,o.mode);
+  y=dancheong(o.x0,o.x1,o.z0,o.z1,y);
+  if(o.upper){
+    const top=roof(o.x0-2,o.x1+2,o.z0-2,o.z1+2,y,3,true);
+    const u=o.upper, ux0=o.x0+u.ix, ux1=o.x1-u.ix, uz0=o.z0+u.iz, uz1=o.z1-u.iz;
+    let y2=hallWalls(ux0,ux1,uz0,uz1,top,u.colH,u.mode);
+    y2=dancheong(ux0,ux1,uz0,uz1,y2);
+    return roof(ux0-2,ux1+2,uz0-2,uz1+2,y2);
+  }
+  return roof(o.x0-2,o.x1+2,o.z0-2,o.z1+2,y);
+}
+// 궁궐 담장
+function palaceWall(cells,bodyBricks,ridge){
+  for(const [x,z] of cells){
+    add(x,0,z,3,mod(x*3+z,5)===0?C.stoneD:C.stone);
+    for(let k=0;k<bodyBricks;k++) add(x,3+3*k,z,3,C.wall);
+    const yc=3+3*bodyBricks;
+    add(x,yc,z,1,mod(x+z,2)?C.roof:C.roofB);
+    if(ridge) add(x,yc+1,z,1,C.ridge);
+  }
+}
+function tree(x,z){
+  add(x,0,z,3,C.trunk); add(x,3,z,3,C.trunk);
+  fill(x-1,x+1,z-1,z+1,6,3,C.leaf);
+  add(x,9,z,3,C.leaf);
+}
+
+const labels=[];
+const P2W = y => y*P;
+
+/* ================= 경복궁 배치 =================
+   x: 동(+) / 서(-),  z: 남(+) / 북(-)
+================================================ */
+
+/* 광화문 */
+group='광화문';
+for(let k=0;k<4;k++){
+  for(let x=-9;x<=9;x++){
+    const ax=Math.abs(x);
+    const open =
+      (ax<=1 && (k<2 || (k===2 && x===0))) ||
+      (ax>=4 && ax<=6 && (k<1 || (k===1 && ax===5)));
+    if(open) continue;
+    for(let z=44;z<=51;z++){
+      add(x,k*3,z,3, mod(x*7+z*3+k*5,6)===0?C.stoneD:C.stone);
+    }
+  }
+}
+ring(-9,9,44,51,12,1,(x,z)=>mod(x+z,2)?C.stoneL:C.stone);           // 여장
+for(const [x,z] of ringCells(-9,9,44,51)) if(mod(x+z,2)) add(x,13,z,1,C.stoneL);
+{
+  const top=hall({x0:-6,x1:6,z0:45,z1:50,y:12,colH:2,mode:'closed',
+                  upper:{ix:1,iz:1,colH:1,mode:'closed'}});
+  labels.push({name:'광화문',pos:[0,P2W(top)+2.2,47.5],group});
+}
+
+/* 흥례문 */
+group='흥례문';
+fill(-6,6,27,32,0,1,C.stoneL);
+{
+  const top=hall({x0:-5,x1:5,z0:28,z1:31,y:1,colH:2,mode:'gate'});
+  labels.push({name:'흥례문',pos:[0,P2W(top)+2.2,29.5],group});
+}
+
+/* 근정전 : 2단 월대 + 중층 지붕 */
+group='근정전';
+ring(-12,12,-19,3,1,3,C.stone);
+fill(-12,12,-19,3,4,3,C.stoneL);
+for(const [x,z] of ringCells(-12,12,-19,3)){
+  if(z===3 && Math.abs(x)<=2) continue;
+  add(x,7,z,1,C.stoneL);
+  if(mod(x+z,3)===0) add(x,8,z,1,C.stone);
+}
+ring(-9,9,-17,-1,7,3,C.stone);
+fill(-9,9,-17,-1,10,3,C.stoneL);
+for(const [x,z] of ringCells(-9,9,-17,-1)){
+  if(z===-1 && Math.abs(x)<=2) continue;
+  add(x,13,z,1,C.stoneL);
+  if(mod(x+z,3)===0) add(x,14,z,1,C.stone);
+}
+for(let x=-2;x<=2;x++){
+  const c = x===0?C.stoneD:C.stone;              // 가운데 답도
+  stack(x,4,1,6,c); stack(x,5,1,4,c); stack(x,6,1,2,c);   // 하월대 계단
+  stack(x,0,7,6,c); stack(x,1,7,4,c); stack(x,2,7,2,c);   // 상월대 계단
+}
+{
+  const top=hall({x0:-7,x1:7,z0:-15,z1:-3,y:13,colH:3,mode:'closed',
+                  upper:{ix:3,iz:3,colH:2,mode:'closed'}});
+  labels.push({name:'근정전',pos:[0,P2W(top)+2.5,-9],group});
+}
+
+/* 경회루 : 연못 위 누각 */
+group='경회루';
+fill(-43,-29,-29,-19,0,3,C.stone);                         // 섬(기단)
+for(const zz of [[-27,-26],[-22,-21]])                      // 다리
+  fill(-28,-26,zz[0],zz[1],2,1,C.stoneL);
+for(let x=-41;x<=-31;x+=2) for(let z=-27;z<=-21;z+=2)      // 돌기둥
+  stack(x,z,3,9,C.stone);
+fill(-42,-30,-28,-20,12,1,C.wood);                         // 마루
+ring(-42,-30,-28,-20,13,1,C.red);                          // 난간
+{
+  const top=hall({x0:-41,x1:-31,z0:-27,z1:-21,y:13,colH:2,mode:'open'});
+  labels.push({name:'경회루',pos:[-36,P2W(top)+2.2,-24],group});
+}
+ring(-47,-25,-37,-11,0,3,C.stone);                         // 연못 석축
+fill(-46,-26,-36,-12,0,1,C.water,{tile:true});             // 물
+
+/* 궁궐 담장 */
+group='궁궐 담장';
+palaceWall(ringCells(-50,26,-40,48).filter(([x,z])=>!(z===48&&Math.abs(x)<=9)),2,false);
+palaceWall(ringCells(-49,25,-39,47).filter(([x,z])=>!(z===47&&Math.abs(x)<=9)),2,true);
+palaceWall(ringCells(-20,20,-26,30).filter(([x,z])=>!(z===30&&Math.abs(x)<=6)),1,true);
+labels.push({name:'궁궐 담장',pos:[26,P2W(12)+2,20],group});
+
+/* 바닥 · 나무 */
+group=null;
+fill(-19,19,-25,29,0,1,(x,z)=> (Math.abs(x)<=1 && z>=7) ? C.paveD : (mod(x+z,2)?C.pave:C.pave2));
+fill(-3,3,33,43,0,1,(x,z)=>Math.abs(x)<=1?C.paveD:C.pave);
+fill(-3,3,52,57,0,1,(x,z)=>Math.abs(x)<=1?C.paveD:C.pave);
+for(const [x,z] of [[-16,40],[16,40],[-30,40],[-42,42],[22,10],[22,-14],[22,-32],[-10,-34],[6,-34],[-24,8],[-36,22],[-44,2]])
+  tree(x,z);
+
+/* ---------- 정렬: 아래부터, 남쪽(광화문)부터 ---------- */
+els.sort((a,b)=> a.y-b.y || b.z-a.z || a.x-b.x);
+const N=els.length;
+const groupLast={};
+els.forEach((e,i)=>{ if(e.group) groupLast[e.group]=i; });
+
+/* ---------- 씬 ---------- */
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0xcfe3f2);
+scene.fog=new THREE.Fog(0xcfe3f2,220,480);
+
+const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,0.5,1200);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const labelRenderer=new CSS2DRenderer();
+labelRenderer.setSize(innerWidth,innerHeight);
+labelRenderer.domElement.style.cssText='position:fixed;top:0;left:0;pointer-events:none';
+document.body.appendChild(labelRenderer.domElement);
+
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(renderer),0.04).texture;
+
+const sun=new THREE.DirectionalLight(0xfff4e0,1.6);
+sun.position.set(50,120,70);
+sun.target.position.set(-12,0,8);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-85,right:85,top:85,bottom:-85,near:1,far:400});
+sun.shadow.bias=-0.0004; sun.shadow.normalBias=0.03;
+scene.add(sun,sun.target);
+scene.add(new THREE.HemisphereLight(0xdbeeff,0x6b8a4a,0.35));
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+controls.maxPolarAngle=Math.PI/2.08;
+controls.minDistance=12; controls.maxDistance=300;
+function resetView(){
+  camera.position.set(58,78,118);
+  controls.target.set(-12,4,6);
+  controls.update();
+}
+resetView();
+
+const plastic = c => new THREE.MeshStandardMaterial({color:c,roughness:0.32,metalness:0,envMapIntensity:0.55});
+
+/* 바닥판 (초록 베이스플레이트) */
+const BX0=-56,BX1=32,BZ0=-46,BZ1=60;
+const base=new THREE.Mesh(new THREE.BoxGeometry(BX1-BX0+1,0.4,BZ1-BZ0+1),plastic(C.grass));
+base.position.set((BX0+BX1)/2,-0.2,(BZ0+BZ1)/2);
+base.receiveShadow=true;
+scene.add(base);
+const far=new THREE.Mesh(new THREE.PlaneGeometry(2000,2000),new THREE.MeshStandardMaterial({color:0xb9cdb0,roughness:1}));
+far.rotation.x=-Math.PI/2; far.position.y=-0.45; far.receiveShadow=true;
+scene.add(far);
+
+const studGeo=new THREE.CylinderGeometry(0.3,0.3,0.18,14);
+const dummy=new THREE.Object3D();
+{
+  const cells=[];
+  for(let x=BX0;x<=BX1;x++) for(let z=BZ0;z<=BZ1;z++) if(!occ.has(key(x,0,z))) cells.push([x,z]);
+  const gs=new THREE.InstancedMesh(studGeo,plastic(C.grass),cells.length);
+  cells.forEach(([x,z],i)=>{ dummy.position.set(x,0.09,z); dummy.updateMatrix(); gs.setMatrixAt(i,dummy.matrix); });
+  gs.receiveShadow=true; gs.frustumCulled=false;
+  scene.add(gs);
+}
+
+/* 브릭 · 플레이트 · 스터드 인스턴스 */
+let nb=0,np=0,ns=0;
+for(const e of els){
+  e.mi = e.h===3 ? nb++ : np++;
+  e.si = (!e.tile && !occ.has(key(e.x,e.y+e.h,e.z))) ? ns++ : -1;
+}
+const white=plastic(0xffffff);
+const bricks=new THREE.InstancedMesh(new THREE.BoxGeometry(0.98,3*P-0.02,0.98),white,nb);
+const plates=new THREE.InstancedMesh(new THREE.BoxGeometry(0.98,P-0.02,0.98),white,np);
+const studs =new THREE.InstancedMesh(studGeo,white,ns);
+const col=new THREE.Color();
+for(const e of els){
+  col.setHex(e.color);
+  (e.h===3?bricks:plates).setColorAt(e.mi,col);
+  if(e.si>=0) studs.setColorAt(e.si,col);
+}
+for(const m of [bricks,plates,studs]){
+  m.castShadow=true; m.receiveShadow=true; m.frustumCulled=false;
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(m);
+}
+studs.castShadow=false;
+
+const ZERO=new THREE.Matrix4().makeScale(0,0,0);
+function place(i,d){
+  const e=els[i];
+  dummy.position.set(e.x,(e.y+e.h/2)*P+d,e.z); dummy.updateMatrix();
+  (e.h===3?bricks:plates).setMatrixAt(e.mi,dummy.matrix);
+  if(e.si>=0){
+    dummy.position.y=(e.y+e.h)*P+0.09+d; dummy.updateMatrix();
+    studs.setMatrixAt(e.si,dummy.matrix);
+  }
+}
+function hide(i){
+  const e=els[i];
+  (e.h===3?bricks:plates).setMatrixAt(e.mi,ZERO);
+  if(e.si>=0) studs.setMatrixAt(e.si,ZERO);
+}
+function flush(){ bricks.instanceMatrix.needsUpdate=plates.instanceMatrix.needsUpdate=studs.instanceMatrix.needsUpdate=true; }
+for(let i=0;i<N;i++) place(i,0);
+flush();
+
+/* 한국어 라벨 */
+for(const l of labels){
+  const div=document.createElement('div');
+  div.className='label'; div.textContent=l.name;
+  const obj=new CSS2DObject(div);
+  obj.position.set(...l.pos);
+  scene.add(obj);
+  l.div=div; l.th=groupLast[l.group];
+}
+
+/* ---------- 조립 애니메이션 ---------- */
+const countEl=document.getElementById('count');
+const speedEl=document.getElementById('speed');
+let assembling=false, spawned=N, active=[], startT=0, dur=30;
+const FALL=0.42, DROP=5;
+const fmt=n=>n.toLocaleString('ko-KR');
+function updateCount(){ countEl.textContent=`블록 ${fmt(spawned)} / ${fmt(N)}개`; }
+function updateLabels(){ for(const l of labels) l.div.classList.toggle('hide', spawned<=l.th); }
+updateCount();
+
+function startBuild(){
+  for(let i=0;i<N;i++) hide(i);
+  flush();
+  spawned=0; active=[]; dur=+speedEl.value;
+  startT=performance.now()/1000; assembling=true;
+  updateLabels();
+}
+function finish(){
+  for(let i=0;i<N;i++) place(i,0);
+  flush(); spawned=N; active=[]; assembling=false;
+  updateLabels(); updateCount();
+}
+document.getElementById('build').onclick=startBuild;
+document.getElementById('skip').onclick=finish;
+document.getElementById('view').onclick=resetView;
+
+function tick(){
+  requestAnimationFrame(tick);
+  if(assembling){
+    const now=performance.now()/1000;
+    const target=Math.min(N,Math.floor((now-startT)/dur*N)+1);
+    const before=spawned;
+    while(spawned<target){ active.push({i:spawned,t0:now}); spawned++; }
+    for(let j=active.length-1;j>=0;j--){
+      const a=active[j], p=(now-a.t0)/FALL;
+      if(p>=1){ place(a.i,0); active[j]=active[active.length-1]; active.pop(); }
+      else place(a.i,DROP*(1-p*p));
+    }
+    flush();
+    if(spawned!==before){ updateCount(); updateLabels(); }
+    if(spawned>=N && active.length===0) assembling=false;
+  }
+  controls.update();
+  renderer.render(scene,camera);
+  labelRenderer.render(scene,camera);
+}
+tick();
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight); labelRenderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
