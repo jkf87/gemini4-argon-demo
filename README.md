@@ -2,7 +2,7 @@
 
 코난쌤 유튜브 영상 「제미나이 4 아르곤 직접 써봤습니다」의 직접 호출 구간(07:44~09:12)에서 쓴 코드와 결과물이에요.
 
-- **결과 페이지 바로 보기:** https://jkf87.github.io/gemini4-argon-demo/
+- **결과 페이지 바로 보기:** https://conanssam.com/gemini4-argon-demo/
   (영상에 나온 실행에서 아르곤이 만든 HTML 그대로예요. API 키 없이 열려요.)
 
 ## 무엇을 했나요
